@@ -16,14 +16,16 @@ class Progress:
             self.width = max(self.width, len(line))
             print("\r" + line.ljust(self.width), end="", file=sys.stderr, flush=True)
 
-    def finish(self, generation: int, generations: int, scores: Sequence[float], best: float) -> None:
+    def finish(self, generation: int, generations: int, scores: Sequence[float], best: float | None) -> None:
         if self.enabled:
             mean = fsum(score / len(scores) for score in scores)
             line = (
                 f"Generation {generation}/{generations} | 100% | "
                 f"best={max(scores):.6g} mean={mean:.6g} "
-                f"worst={min(scores):.6g} overall_best={best:.6g}"
+                f"worst={min(scores):.6g}"
             )
+            if best is not None:
+                line += f" overall_best={best:.6g}"
             print("\r" + line.ljust(self.width), file=sys.stderr, flush=True)
             self.width = 0
 

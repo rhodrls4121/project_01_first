@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>오목 대국</title>
+<style>
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #181b17; color: #f7f1e5; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { width: min(100% - 28px, 650px); margin: clamp(18px, 5vw, 54px) auto; }
+h1 { font-size: clamp(1.8rem, 5vw, 2.8rem); margin: 0 0 18px; letter-spacing: -.065em; }
+form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+label { display: grid; gap: 5px; font-size: .85rem; color: #dbcfba; }
+select, form button { border: 1px solid #605745; border-radius: 8px; padding: 8px 12px; font: inherit; font-size: .95rem; background: #282b24; color: #f7f1e5; }
+form button { background: #e5b879; color: #20160d; font-weight: 700; cursor: pointer; }
+form button:disabled { opacity: .6; }
+#status { margin: 16px 0 10px; min-height: 1.6em; }
+#board { display: grid; grid-template-columns: repeat(15, 1fr); grid-template-rows: repeat(15, 1fr); aspect-ratio: 1; border-radius: 12px; padding: 1.2%; background: linear-gradient(135deg, #e9bd81, #c38950); box-shadow: 0 12px 40px #0005; }
+.cell { display: grid; place-items: center; position: relative; padding: 0; border: 0; min-width: 0; background: transparent; cursor: pointer; touch-action: manipulation; }
+.cell::before, .cell::after { content: ''; position: absolute; background: #634322; pointer-events: none; }
+.cell::before { left: var(--left, 0%); right: var(--right, 0%); top: calc(50% - .5px); height: 1px; }
+.cell::after { top: var(--top, 0%); bottom: var(--bottom, 0%); left: calc(50% - .5px); width: 1px; }
+.cell:focus-visible { z-index: 2; outline: 2px solid #24190e; outline-offset: -1px; }
+.stone { display: grid; place-items: center; position: relative; z-index: 1; width: 80%; aspect-ratio: 1; border-radius: 50%; pointer-events: none; }
+.star:not(.black):not(.white) .stone { width: 18%; background: #634322; }
+.black .stone { background: radial-gradient(circle at 34% 28%, #55544e, #141411 72%); color: #fff; box-shadow: 0 1px 3px #0007; }
+.white .stone { background: radial-gradient(circle at 32% 24%, #fffdf4, #d7cdba 76%); color: #2e1c0d; box-shadow: 0 1px 3px #0007; }
+.last .stone::before { content: ''; border: 1.5px solid currentColor; border-radius: 50%; width: 34%; aspect-ratio: 1; }
+.cell[aria-disabled="true"] { cursor: default; }
+@media (hover: hover) { .cell[aria-disabled="false"]:hover .stone { background: #73523068; } }
+</style>
+</head>
+<body>
+<main>
+<h1>오목 대국</h1>
+<form id="setup">
+<label>규칙<select id="rules"><option value="renju">렌주</option><option value="freestyle">기본 오목</option></select></label>
+<label>내 돌<select id="color"><option value="1">흑</option><option value="2">백</option></select></label>
+<button>새 대국</button>
+</form>
+<p id="status" role="status"></p>
+<div id="board" role="group" aria-label="15×15 오목판"></div>
+</main>
+<script>
+const size = 15;
+const center = 112;
+const form = document.querySelector('#setup');
+const board = document.querySelector('#board');
+const status = document.querySelector('#status');
+const rulesField = document.querySelector('#rules');
+const colorField = document.querySelector('#color');
+const controls = [...form.elements];
+const cells = [];
+let options, state, busy = false;
+let focused = center;
+
+for (let point = 0; point < size * size; point++) {
+  const x = point % size, y = Math.floor(point / size);
+  const cell = document.createElement('button');
+  cell.type = 'button';
+  if (x === 0) cell.style.setProperty('--left', '50%');
+  if (y === 0) cell.style.setProperty('--top', '50%');
+  if (x === size - 1) cell.style.setProperty('--right', '50%');
+  if (y === size - 1) cell.style.setProperty('--bottom', '50%');
+  cell.addEventListener('click', () => {
+    if (cell.getAttribute('aria-disabled') === 'false') requestTurn(point);
+  });
+  cell.addEventListener('focus', () => {
+    cells[focused].tabIndex = -1;
+    focused = point;
+    cell.tabIndex = 0;
+  });
+  cell.addEventListener('keydown', event => {
+    const offsets = {ArrowUp: -size, ArrowDown: size, ArrowLeft: -1, ArrowRight: 1};
+    if (!Object.hasOwn(offsets, event.key)) return;
+    event.preventDefault();
+    const next = point + offsets[event.key];
+    if (next < 0 || next >= cells.length) return;
+    if (event.key === 'ArrowLeft' && x === 0 || event.key === 'ArrowRight' && x === size - 1) return;
+    cells[next].focus();
+  });
+  const stone = document.createElement('span');
+  stone.className = 'stone';
+  cell.append(stone);
+  board.append(cell);
+  cells.push(cell);
+}
+
+function render() {
+  const last = state?.moves.at(-1);
+  cells.forEach((cell, point) => {
+    const color = state?.cells[point] ?? 0;
+    const x = point % size, y = Math.floor(point / size);
+    const star = point === center || [3, 11].includes(x) && [3, 11].includes(y);
+    cell.className = ['cell', color === 1 ? 'black' : color === 2 ? 'white' : '', star ? 'star' : '', last === point ? 'last' : ''].filter(Boolean).join(' ');
+    cell.tabIndex = point === focused ? 0 : -1;
+    cell.setAttribute('aria-label', `${y + 1}행 ${x + 1}열 ${['빈 자리', '흑', '백'][color]}`);
+    cell.setAttribute('aria-disabled', !state || busy || state.finished || color !== 0);
+  });
+  controls.forEach(control => { control.disabled = busy; });
+}
+
+async function requestTurn(move) {
+  busy = true;
+  render();
+  status.textContent = '대국을 계산하는 중…';
+  try {
+    const payload = {...options, moves: move === undefined ? [] : state.moves};
+    if (move !== undefined) payload.move = move;
+    const response = await fetch('/api/turn', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || '대국 요청에 실패했습니다.');
+    state = data;
+    if (!state.finished) {
+      const color = options.human === 1 ? '흑' : '백';
+      status.textContent = state.moves.length === 0 && options.rules === 'renju'
+        ? '흑 차례 · 첫 수는 중앙에 놓으세요.' : `${color} 차례 · ${state.moves.length}수 진행`;
+    } else {
+      const result = state.winner === 0 ? '무승부' : state.winner === options.human ? '승리' : '패배';
+      status.textContent = state.foul ? `${result} · 흑 금수(${state.foul})` : result;
+    }
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    busy = false;
+    render();
+  }
+}
+
+form.addEventListener('submit', event => {
+  event.preventDefault();
+  options = {rules: rulesField.value, human: Number(colorField.value)};
+  state = null;
+  requestTurn();
+});
+form.requestSubmit();
+</script>
+</body>
+</html>

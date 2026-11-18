@@ -12,7 +12,10 @@ ScoreFunction = Callable[[Individual], float]
 
 
 def evaluate(individual: Individual, score: ScoreFunction) -> float:
-    value = score(individual)
+    return validate_score(score(individual))
+
+
+def validate_score(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, Real):
         raise TypeError("score must return one real number")
     result = float(value)
