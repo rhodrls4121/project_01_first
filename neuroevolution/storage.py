@@ -9,8 +9,12 @@ from .network import Individual
 
 
 def save_individual(individual: Individual, path: str | Path) -> None:
-    destination = Path(path)
     data = {"version": 1, "layers": individual.layers, "genes": individual.genes}
+    _write_json(data, path)
+
+
+def _write_json(data: dict, path: str | Path) -> None:
+    destination = Path(path)
     temporary = None
     try:
         with NamedTemporaryFile(

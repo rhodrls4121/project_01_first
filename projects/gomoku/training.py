@@ -12,7 +12,7 @@ from .rules import BLACK, CENTER, EMPTY, SIZE, WHITE, Board, Rules
 
 def settings(generations: int, population_size: int, seed: int, debug: bool) -> Config:
     return configure(
-        input_size=FEATURES, hidden_layers=(6,), output_size=1,
+        input_size=FEATURES, hidden_layers=(24, 12), output_size=1,
         generations=generations, population_size=population_size,
         parent_count=max(2, population_size // 3),
         survivor_count=max(1, population_size // 6),
@@ -42,22 +42,25 @@ def duel(black: Individual, white: Individual, rules: Rules, moves: tuple[int, .
 
 
 class Tournament:
-    def __init__(self, rules: Rules, seed: int) -> None:
+    def __init__(self, rules: Rules, seed: int, completed: int = 0) -> None:
         self.rules = rules
-        self.rng = Random(seed)
+        self.seed = seed
+        self.completed = completed
 
     def __call__(self, population: tuple[Individual, ...], report: ReportProgress) -> list[float]:
+        rng = Random(f"{self.seed}:{self.completed + 1}")
         count = len(population)
         total = count * (count - 1)
         scores = [0.0] * count
         done = 0
         report(done, total)
         for first, second in combinations(range(count), 2):
-            moves = opening(self.rng)
+            moves = opening(rng)
             for black, white in ((first, second), (second, first)):
                 winner = duel(population[black], population[white], self.rules, moves)
                 scores[black] += 1 if winner == BLACK else 0.5 if winner == EMPTY else 0
                 scores[white] += 1 if winner == WHITE else 0.5 if winner == EMPTY else 0
                 done += 1
                 report(done, total)
+        self.completed += 1
         return [points / (2 * (count - 1)) for points in scores]

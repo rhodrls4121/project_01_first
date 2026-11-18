@@ -6,9 +6,9 @@
 
 | 경로 | 내용 |
 | --- | --- |
-| `neuroevolution/` | 공용 신경망 실행, 설정 검증, 세대 진행, 교잡, 변이, 진행 로그, JSON 저장 |
+| `neuroevolution/` | 공용 신경망 실행, 설정 검증, 세대 진행, 교잡, 변이, 진행 로그, 모델과 체크포인트 저장 |
 | `projects/xor/` | XOR 실행, 설정·평가 함수(`training.py`), 학습 모델 두 개(`models/`) |
-| `projects/gomoku/` | 오목 규칙(`rules.py`), 착수 정책(`policy.py`), 설정·대국 평가(`training.py`), 브라우저 대국(`web.py`, `board.html`), 규칙별 1위 모델(`models/`) |
+| `projects/gomoku/` | 오목 규칙(`rules.py`), 착수 정책(`policy.py`), 설정·대국 평가(`training.py`), 브라우저 대국(`web.py`, `board.html`), 규칙별 1위 모델과 학습 체크포인트(`models/`) |
 
 ## Codespaces에서 오목 대국
 
@@ -36,7 +36,23 @@ python3 -m projects.gomoku play --model renju-local.json
 - 세대마다 모든 개체 쌍이 같은 초기 3수 배치를 두고 흑과 백을 바꿔 두 번 대국합니다. 승리는 1점, 무승부는 0.5점, 패배는 0점입니다. 경기당 평균 점수로 개체 순위를 정합니다.
 - 12개체라면 세대마다 132경기를 진행합니다. 진행률은 완료 경기 수를 기준으로 표시합니다. 선택, 교잡과 변이는 공용 프레임워크에서 처리합니다.
 - 상대가 세대마다 바뀌므로 최종 세대의 1위를 저장합니다. 함께 제공하는 두 모델은 각각 12세대와 12개체, 시드 42로 학습했습니다.
-- 착수 정책은 주변 후보의 연속 돌 수, 열린 끝, 중앙 거리, 진행 단계에서 뽑은 18개 입력으로 신경망의 착수 점수를 계산합니다. 즉시 이기는 수와 상대의 즉시 승리 방어를 우선하고, 흑 금수는 후보에서 제외합니다. 오목판 전체를 탐색하는 수읽기는 포함하지 않습니다.
+- 착수 정책은 주변 후보의 연속 돌 수, 열린 끝, 중앙 거리, 진행 단계에서 뽑은 18개 입력을 완전연결 신경망(18 → 24 → 12 → 1)에 넣어 착수 점수를 계산합니다. 즉시 이기는 수와 상대의 즉시 승리 방어를 우선하고, 흑 금수는 후보에서 제외합니다. 오목판 전체를 탐색하는 수읽기는 포함하지 않습니다.
+
+### 이어서 학습하기
+
+오목 학습은 세대 평가가 끝날 때마다 체크포인트를 갱신합니다. 기본 파일명은 `gomoku-renju-checkpoint.json` 또는 `gomoku-freestyle-checkpoint.json`입니다. 체크포인트에는 완료한 세대, 설정, 점수순 개체군, 저장 대상 개체, 프레임워크 난수 상태가 들어갑니다. Ctrl+C로 중단하면 마지막으로 저장이 완료된 세대의 파일로 재개할 수 있습니다.
+
+```bash
+# 앞선 예제로 만든 체크포인트에서 5세대 더 학습
+python3 -m projects.gomoku train --resume gomoku-renju-checkpoint.json --generations 5 --model renju-local.json
+
+# 저장소에 동봉된 12세대 개체군에서 이어서 학습하고 로컬에 저장
+python3 -m projects.gomoku train --resume projects/gomoku/models/renju-checkpoint.json --generations 5 --checkpoint gomoku-renju-checkpoint.json --model renju-local.json
+```
+
+`--generations 5`는 현재 체크포인트에서 5세대를 추가합니다. 예를 들어 12세대 체크포인트를 불러오면 13~17세대를 실행합니다. `--checkpoint`를 생략하면 재개에 사용한 파일에 새 진행 상태를 저장합니다. 대국에서 이어서 학습한 모델을 사용하려면 `python3 -m projects.gomoku play --model renju-local.json`을 실행합니다.
+
+이전 `18 → 6 → 1` 챔피언 JSON은 GUI에서 불러올 수 있습니다. 이전 버전에 전체 개체군 체크포인트가 없었으므로, 두 은닉층 모델은 새로 학습한 12세대 체크포인트에서 이어갈 수 있습니다.
 
 ## XOR 실행
 
@@ -102,5 +118,7 @@ print(run_saved("best_individual.json", (0, 1)))
 
 
 개체끼리 겨루는 프로젝트는 `evolve(config, population_score=evaluator)`를 사용합니다. 평가 함수는 `(population, report)`를 받아 원래 개체 순서대로 점수 하나씩을 반환합니다. `report(완료 경기 수, 전체 경기 수)`를 호출하면 진행률이 갱신됩니다.
+
+프레임워크 API에서 체크포인트를 쓰려면 `evolve(..., checkpoint_path=path)`를 사용합니다. 재개할 때는 `resume=load_checkpoint(path)`를 전달하고 `Config.generations`를 **최종 목표 세대 번호**로 설정합니다. `generations`와 `debug`를 제외한 설정, 평가 방식, `run_id`는 유지합니다. 평가 함수가 자체 난수나 외부 상태를 쓰면 재개 시 그 상태도 복구해야 합니다. 오목 대국의 초반 배치는 시드와 현재 세대 번호로 재현합니다.
 
 회귀 테스트는 `python3 -m unittest discover -s tests`로 실행합니다.
